@@ -11,3 +11,6 @@ This is a solution, this bot servers as a proxy to your server
 - Send / Read messages
 - Chat History
 - Upload files
+
+## Admin login page
+https://discord.example.com/auth/discord
