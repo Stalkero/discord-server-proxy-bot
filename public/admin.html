@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Admin Panel</title>
+  <link rel="stylesheet" href="/chat.css">
+  <style>
+    body { max-width: 800px; margin: auto; padding-top: 30px; font-family: sans-serif; }
+    table { width: 100%; margin-top: 20px; border-collapse: collapse; }
+    th, td { padding: 10px; border-bottom: 1px solid #444; text-align: left; }
+    input, button { padding: 6px; margin: 4px 0; }
+    .form-group { margin-bottom: 10px; }
+    .actions button { margin-right: 5px; }
+  </style>
+</head>
+<body>
+  <h1>Admin Panel</h1>
+
+  <h3>Create New User</h3>
+  <div class="form-group">
+    <input id="newUsername" placeholder="Username">
+    <input id="newPassword" type="password" placeholder="Password">
+    <input id="newPrefix" placeholder="Prefix">
+    <button onclick="createUser()">Create</button>
+  </div>
+
+  <h3>Users</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Prefix</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="userTable"></tbody>
+  </table>
+
+  <script>
+    async function loadUsers() {
+      const table = document.getElementById('userTable');
+      table.innerHTML = ''; // Clear old rows immediately
+
+      try {
+        const res = await fetch('/api/users?_=' + Date.now()); // Prevent cache
+        if (!res.ok) throw new Error('Request failed: ' + res.status);
+        const data = await res.json();
+        console.log("Refreshed user list:", data);
+
+        // Handle both object and array responses
+        if (Array.isArray(data)) {
+          data.forEach(user => {
+            appendUserRow(user.username, user.prefix);
+          });
+        } else {
+          Object.entries(data).forEach(([username, info]) => {
+            appendUserRow(username, info.prefix);
+          });
+        }
+      } catch (err) {
+        console.error('❌ Error loading users:', err);
+        alert('Failed to load users');
+      }
+    }
+
+    function appendUserRow(username, prefix = '') {
+      const table = document.getElementById('userTable');
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${username}</td>
+        <td>${prefix}</td>
+        <td class="actions">
+          <button onclick="resetPassword('${username}')">Reset Password</button>
+          <button onclick="deleteUser('${username}')">Delete</button>
+        </td>
+      `;
+      table.appendChild(row);
+    }
+
+
+    async function createUser() {
+      const username = document.getElementById('newUsername').value.trim();
+      const password = document.getElementById('newPassword').value.trim();
+      const prefix = document.getElementById('newPrefix').value.trim();
+
+      if (!username || !password || !prefix) {
+        alert('Please fill in all fields.');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, prefix })
+        });
+
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(err);
+        }
+
+        // Clear the form fields
+        document.getElementById('newUsername').value = '';
+        document.getElementById('newPassword').value = '';
+        document.getElementById('newPrefix').value = '';
+
+        // Refresh the user list
+        await loadUsers();
+
+        alert(`✅ User "${username}" created successfully.`);
+
+      } catch (err) {
+        console.error(err);
+        alert(`❌ Failed to create user: ${err.message}`);
+      }
+    }
+
+    
+    async function resetPassword(username) {
+      const password = prompt(`Enter a new password for "${username}":`);
+      if (!password) return;
+
+      const res = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+
+      if (res.ok) {
+        alert(`✅ Password reset for ${username}`);
+      } else {
+        const error = await res.text();
+        alert(`❌ Failed to reset password: ${error}`);
+      }
+    }
+
+    async function deleteUser(username) {
+      if (!confirm(`Are you sure you want to delete "${username}"?`)) return;
+
+      const res = await fetch(`/api/users/${username}`, { method: 'DELETE' });
+      if (!res.ok) {
+        alert('❌ Failed to delete user');
+        return;
+      }
+
+      loadUsers();
+    }
+
+    // Load users immediately on page load
+    loadUsers();
+  </script>
+</body>
+</html>

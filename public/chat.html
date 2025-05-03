@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Chat</title>
+  <link rel="stylesheet" href="/styleCHAT.css">
+</head>
+<body>
+  <h1>Chat</h1>
+
+  <div style="text-align: right; margin-bottom: 10px;">
+    <button onclick="logout()">Logout</button>
+  </div>
+
+  <label for="channelSelect">Channel:</label>
+  <select id="channelSelect"></select>
+
+  <div><strong>Online Users:</strong> <span id="onlineList"></span></div>
+  <div><strong>Discord Online:</strong> <span id="discordOnlineList"></span></div>
+
+  <div id="messages"></div>
+  <div id="typingIndicator"></div>
+
+  <form id="msgForm">
+    <input type="text" id="msgInput" placeholder="Your message" autocomplete="off">
+    <select id="emojiPicker">
+      <option disabled selected>😊</option>
+      <option>😀</option>
+      <option>😂</option>
+      <option>❤️</option>
+      <option>👍</option>
+      <option>🎉</option>
+      <option>🔥</option>
+      <option>😭</option>
+    </select>
+    <button type="submit">Send</button>
+  </form>
+
+  <input type="file" id="fileInput" accept="image/*">
+  <button onclick="sendImage()">Send Image</button>
+
+  <div id="dropZone">Drag and drop an image here to upload</div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const messagesDiv = document.getElementById('messages');
+    const channelSelect = document.getElementById('channelSelect');
+    const msgInput = document.getElementById('msgInput');
+    const emojiPicker = document.getElementById('emojiPicker');
+    const typingIndicator = document.getElementById('typingIndicator');
+    let currentChannel = 'all';
+    let username = "";
+    let typingTimeout;
+
+    function logout() {
+      fetch('/logout', { method: 'POST' })
+        .then(() => window.location.href = '/')
+        .catch(err => {
+          alert('Failed to log out');
+          console.error(err);
+        });
+    }
+
+
+    function addMessage(data) {
+      const p = document.createElement('p');
+      const label = currentChannel === 'all' ? `<span style="color:#888">[${data.channelId}]</span> ` : '';
+      p.innerHTML = `${label}<strong>${data.user}:</strong> ${data.text}`;
+      messagesDiv.appendChild(p);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function loadMessages(channelId) {
+      const query = channelId === 'all' ? '?all=true' : `?channelId=${channelId}`;
+      fetch(`/messages${query}`)
+        .then(res => res.json())
+        .then(data => {
+          messagesDiv.innerHTML = '';
+          data.forEach(addMessage);
+        });
+    }
+
+    async function loadChannels() {
+      const res = await fetch('/channels');
+      const channels = await res.json();
+      channelSelect.innerHTML = '';
+
+      const allOpt = document.createElement('option');
+      allOpt.value = 'all';
+      allOpt.textContent = '📡 All Channels';
+      channelSelect.appendChild(allOpt);
+
+      channels.forEach(c => {
+        const option = document.createElement('option');
+        option.value = c.id;
+        option.textContent = c.name;
+        channelSelect.appendChild(option);
+      });
+
+      currentChannel = 'all';
+      loadMessages(currentChannel);
+    }
+
+    async function loadDiscordOnline() {
+      const res = await fetch('/discord-online');
+      const names = await res.json();
+      document.getElementById('discordOnlineList').textContent = names.join(', ');
+    }
+
+    channelSelect.addEventListener('change', () => {
+      currentChannel = channelSelect.value;
+      loadMessages(currentChannel);
+    });
+
+    document.getElementById('msgForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const msg = msgInput.value;
+      if (!msg || !currentChannel || currentChannel === 'all') return;
+      await fetch('/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg, channelId: currentChannel })
+      });
+      msgInput.value = '';
+      socket.emit('stop typing', { user: username, channelId: currentChannel });
+    });
+
+    emojiPicker.addEventListener('change', () => {
+      msgInput.value += emojiPicker.value;
+      emojiPicker.selectedIndex = 0;
+      msgInput.focus();
+    });
+
+    msgInput.addEventListener('input', () => {
+      if (currentChannel === 'all') return;
+      socket.emit('typing', { user: username, channelId: currentChannel });
+      clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(() => {
+        socket.emit('stop typing', { user: username, channelId: currentChannel });
+      }, 2000);
+    });
+
+    async function sendImage(file = null) {
+      const input = document.getElementById('fileInput');
+      if (!file) file = input.files[0];
+      if (!file || !currentChannel || currentChannel === 'all') return alert('Select a channel first');
+
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('channelId', currentChannel);
+
+      const res = await fetch('/upload', {
+        method: 'POST',
+        body: formData
+      });
+      if (!res.ok) alert('Upload failed');
+      input.value = '';
+    }
+
+    const dropZone = document.getElementById('dropZone');
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.style.background = '#eee';
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.style.background = '#fff';
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.style.background = '#fff';
+      const files = e.dataTransfer.files;
+      if (files.length > 0) sendImage(files[0]);
+    });
+
+    socket.on('chat message', msg => {
+      if (currentChannel === 'all' || msg.channelId === currentChannel) {
+        addMessage(msg);
+      }
+    });
+
+    socket.on('user typing', ({ user, channelId }) => {
+      if (channelId !== currentChannel || currentChannel === 'all') return;
+      typingIndicator.innerText = `${user} is typing...`;
+    });
+
+    socket.on('user stop typing', ({ user, channelId }) => {
+      if (channelId !== currentChannel || currentChannel === 'all') return;
+      typingIndicator.innerText = '';
+    });
+
+    socket.on('online users', users => {
+      document.getElementById('onlineList').textContent = users.join(', ');
+    });
+
+    fetch('/session-info')
+      .then(res => res.json())
+      .then(data => {
+        username = data.username;
+        socket.emit('registerUser', username);
+        loadChannels();
+        loadDiscordOnline();
+        setInterval(loadDiscordOnline, 60000);
+      });
+  </script>
+</body>
+</html>

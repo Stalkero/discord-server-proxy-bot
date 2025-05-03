@@ -1,0 +1,31 @@
+<!-- public/login.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Guest Login</title>
+</head>
+<body>
+  <h2>Guest Login</h2>
+  <form id="login-form">
+    <input type="text" placeholder="Username" name="username" required />
+    <input type="password" placeholder="Password" name="password" required />
+    <button type="submit">Login</button>
+  </form>
+  <script>
+    document.getElementById('login-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const res = await fetch('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: form.username.value,
+          password: form.password.value
+        })
+      });
+      if (res.ok) window.location.href = '/chat.html';
+      else alert('Login failed');
+    };
+  </script>
+</body>
+</html>
